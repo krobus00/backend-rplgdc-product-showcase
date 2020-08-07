@@ -1,0 +1,26 @@
+POST http://localhost:3000/user/register HTTP/1.1
+Content-type: application/json
+
+{   
+    "name": "Michael Putera Wardana",
+    "username":"testa",
+    "gender": "laki - laki",
+    "nim": "1109512711",
+    "password": "password123",
+    "email": "michaelglax1y@gmail.com"
+}
+###
+POST http://localhost:3000/user/login HTTP/1.1
+Content-type: application/json
+
+{
+    "username": "testa",
+    "password": "password123"
+}
+###
+GET http://localhost:3000/user/info
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJpYXQiOjE1OTY3MjU1NzN9.9kR5EV6GHgoq5rFoy2GTthodX6DwA9aMxb8mK0zATXg
+###
+GET http://localhost:3000/admin
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VyX2lkIjoxLCJuaW0iOiIxMzAxMTk0MDU2IiwiaWF0IjoxNTk1ODc4NjU3fQ.GZCmR2p93wYUuxgmjLYAwn4QxtYf9sdIon5kA7b4Ni8
+###
