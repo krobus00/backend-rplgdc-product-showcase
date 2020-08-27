@@ -1,38 +1,76 @@
 const db = require('../config/database')
 const {response, msg} = require('../helper/helper')
 
-const listProduct = (req, res) => {
-	db.query('SELECT * FROM product', (err, results) => {
-		if (err) return res.json(response(true, msg.failed, {error: err.code}))
-		return res.json(response(false, msg.success, results))
+const listProduct = async (limit) => {
+	return new Promise((resolve, reject) => {
+		db.query('SELECT product.*, user.username, type.type_title FROM product,user,type WHERE product.user_id = user.user_id AND product.type_id = type.type_id order by product_created desc', (err, results) => {
+			if (err) reject(response(true, msg.failed, {error: err.code}))
+			return resolve({
+				total: results.length,
+				data: limit ? results.slice(0, 5) : results,
+			})
+		})
 	})
 }
-const listUser = (req, res) => {
-	db.query('SELECT * FROM user', (err, results) => {
-		if (err) return res.json(response(true, msg.failed, {error: err.code}))
-		return res.json(response(false, msg.success, results))
+const listUser = async (limit, id) => {
+	return new Promise((resolve, reject) => {
+		db.query(`SELECT * FROM user ${id ? 'WHERE user_id != ' + id : ''} order by create_at desc`, (err, results) => {
+			if (err) reject(response(true, msg.failed, {error: err.code}))
+			return resolve({
+				total: results.length,
+				data: limit ? results.slice(0, 5) : results,
+			})
+		})
 	})
 }
-const dashboard = (req, res) => {
-	let product = 0
-	let user = 0
-	db.query(
-		'SELECT * FROM product WHERE takedown_reason IS NULL',
-		(err, results) => {
-			if (err) return res.json(response(true, msg.failed, {error: err.code}))
-			product = results.length
-		},
-	)
-	db.query('SELECT * FROM user', (err, results) => {
-		if (err) return res.json(response(true, msg.failed, {error: err.code}))
-		user = results.length
+const listType = async () => {
+	return new Promise((resolve, reject) => {
+		db.query('SELECT * FROM type', (err, results) => {
+			if (err) reject(response(true, msg.failed, {error: err.code}))
+			return resolve({
+				total: results.length,
+			})
+		})
 	})
-	return res.json(
-		response(false, '', {
-			jumlah_user: user,
-			produk_aktif: product,
-		}),
-	)
+}
+const getListProduct = async (req, res) => {
+	try {
+		let list = await listProduct(false)
+		return res.json(response(false, '', list.data))
+	} catch (e) {
+		return res.json(e)
+	}
+}
+const getListUser = async (req, res) => {
+	try {
+		let list = await listUser(false, req.info.user_id)
+		return res.json(response(false, '', list.data))
+	} catch (e) {
+		return res.json(e)
+	}
+}
+const dashboard = async (req, res) => {
+	try {
+		let users = await listUser(true, '')
+		let products = await listProduct(true)
+		let types = await listType()
+		return res.json(
+			response(false, '', {
+				products: products,
+				users: users,
+				types: types,
+			}),
+		)
+	} catch (e) {
+		res.json(response(true, e.code, {}))
+	}
+}
+const changeUserStatus = (req, res) => {
+	let {user_id, status} = req.body
+	db.query('UPDATE user SET status = ? WHERE user_id = ?', [status, user_id], (err, result) => {
+		if (err) return res.json(response(true, msg.failed, {error: err.code}))
+		return res.json(response(false, msg.success, {}))
+	})
 }
 const adminEditUser = (req, res) => {
 	let {password, email, status, user_id} = req.body
@@ -57,26 +95,33 @@ const adminEditUser = (req, res) => {
 const deleteUser = (req, res) => {
 	const {id} = req.query
 	db.query('DELETE FROM user WHERE user_id = ?', [id], (err, result) => {
-		if (err) return res.json(response(true, 'Gagal menghapus product', {}))
-		if (result.affectedRows == 0)
-			return res.json(response(true, 'id tidak ditemukan', {}))
+		if (err) return res.json(response(true, 'Gagal menghapus user', {}))
+		if (result.affectedRows == 0) return res.json(response(true, 'id tidak ditemukan', {}))
 		return res.json(response(false, 'User telah terhapus', {}))
 	})
 }
 const deleteProduct = (req, res) => {
-	const {id} = req.query
-	db.query('DELETE FROM product WHERE product_id = ?', [id], (err, result) => {
+	const {product_id} = req.body
+	db.query('DELETE FROM product WHERE product_id = ?', [product_id], (err, result) => {
 		if (err) return res.json(response(true, 'Gagal menghapus product', {}))
-		if (result.affectedRows == 0)
-			return res.json(response(true, 'id tidak ditemukan', {}))
+		if (result.affectedRows == 0) return res.json(response(true, 'id tidak ditemukan', {}))
 		return res.json(response(false, 'Product telah terhapus', {}))
 	})
 }
+const undeleteProduct = (req, res) => {
+	const {product_id} = req.body
+	db.query('UPDATE product SET product_deleted = NULL WHERE product_id = ?', [product_id], (err) => {
+		if (err) return res.json(response(true, 'Gagal mengembalikan produk', {}))
+		return res.json(response(false, 'Product berhasil dikembalikan', {}))
+	})
+}
 module.exports = {
-	listProduct,
-	listUser,
+	getListUser,
+	getListProduct,
 	deleteProduct,
+	undeleteProduct,
 	deleteUser,
 	dashboard,
 	adminEditUser,
+	changeUserStatus,
 }

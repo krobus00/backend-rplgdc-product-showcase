@@ -3,11 +3,11 @@ Content-type: application/json
 
 {   
     "name": "Michael Putera Wardana",
-    "username":"testa",
+    "username":"testaa",
     "gender": "laki - laki",
-    "nim": "1109512711",
+    "nim": "1109512791",
     "password": "password123",
-    "email": "michaelglax1y@gmail.com"
+    "email": "mchaelglax1y@gmail.com"
 }
 ###
 POST http://localhost:3000/user/login HTTP/1.1

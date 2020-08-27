@@ -9,6 +9,7 @@ const msg = {
 	fileLimit: 'Jumlah file melebihi batas maksimal',
 	fileSize: 'Ukuran file terlalu besar',
 	unkownForm: 'Form tidak dikenali',
+	errValidation: 'Cek kembali',
 }
 
 /**

@@ -1,12 +1,10 @@
 const {param, query, validationResult, body} = require('express-validator')
-const {
-	checkNIM,
-	checkUsername,
-	checkEmail,
-} = require('../controller/user.controllers')
+const {checkNIM, checkUsername, checkEmail} = require('../controller/user.controllers')
 const {checkTitle} = require('../controller/product.controllers')
-const {response} = require('./helper')
+const {response, msg} = require('./helper')
 const fs = require('fs')
+const path = require('path')
+var DecompressZip = require('decompress-zip')
 const deleteFile = (req) => {
 	for (key in req.files) {
 		req.files[key].forEach((element) => {
@@ -20,15 +18,16 @@ const deleteFile = (req) => {
 }
 const errorFilter = (req) => {
 	const errors = validationResult(req)
-	let err = []
-	errors.errors.map((item) => {
-		if (item.msg != 'Invalid value') err.push(item)
+	let extractedErrors = []
+	errors.array({onlyFirstError: true}).map((err) => {
+		extractedErrors.push({param: err.param, msg: err.msg})
 	})
-	return err
+	return extractedErrors
 }
 const register = [
 	body('name')
 		.exists()
+		.withMessage('Nama harus diisi')
 		.matches(/^[a-zA-Z ]*$/)
 		.withMessage('Nama tidak boleh mengandung angka')
 		.isLength({min: 5, max: 30}),
@@ -37,7 +36,6 @@ const register = [
 		.custom(async (username, {req}) => {
 			await checkUsername(username, true, req.body.user_id)
 		})
-		.withMessage('Username sudah digunakan')
 		.isLength({min: 4, max: 12})
 		.withMessage('Username harus 4 - 12 karakter'),
 	body('nim')
@@ -49,7 +47,7 @@ const register = [
 		})
 		.withMessage('NIM sudah digunakan')
 		.isLength({min: 10, max: 10})
-		.withMessage('NIM salah'),
+		.withMessage('Format nim salah'),
 	body('password').exists().isLength({min: 6, max: 12}),
 	body('email')
 		.exists()
@@ -61,8 +59,7 @@ const register = [
 		.withMessage('Email sudah digunakan'),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Data tidak lengkap!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
@@ -78,8 +75,7 @@ const login = [
 	body('password').exists().isLength({min: 6, max: 12}),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Data tidak lengkap!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
@@ -92,11 +88,20 @@ const editProfile = [
 			await checkEmail(email, true, req.info.user_id)
 		})
 		.withMessage('Email sudah digunakan'),
-	body('password').optional().isLength({min: 6, max: 12}),
+	body('oldpassword').isLength({min: 6, max: 12}).optional({nullable: true, checkFalsy: true}),
+	body('password').isLength({min: 6, max: 12}).optional({nullable: true, checkFalsy: true}),
+	body('cpassword').isLength({min: 6, max: 12}).optional({nullable: true, checkFalsy: true}),
 	(req, res, next) => {
+		if (req.body.cpassword != req.body.password) {
+			err.push({
+				value: '',
+				msg: 'Password tidak sama',
+				param: 'cpassword',
+				location: 'body',
+			})
+		}
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Data tidak lengkap!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
@@ -114,8 +119,7 @@ const adminEditUser = [
 	body('status').exists().withMessage('status harus ada'),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Data tidak lengkap!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
@@ -125,8 +129,7 @@ const category = [
 		.matches(/^[a-zA-Z ]*$/),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Data tidak lengkap!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
@@ -137,11 +140,10 @@ const addProduct = [
 			await checkTitle(title, true, '')
 		})
 		.withMessage('Judul sudah digunakan')
-		.isLength({min: 1, max: 32})
-		.withMessage('title harus 1 - 32 karakter'),
-	body('desc').exists().isLength({min: 5}),
+		.isLength({min: 5, max: 37})
+		.withMessage('title harus 5 - 37 karakter'),
+	body('desc').exists().isLength({min: 5}).withMessage('deskripsi produk terlalu pendek'),
 	body('type').exists(),
-	body('location').exists(),
 	(req, res, next) => {
 		err = errorFilter(req)
 		if (!req.files.thumbnail) {
@@ -152,11 +154,69 @@ const addProduct = [
 				location: 'files',
 			})
 		}
-		if (err.length > 0) {
-			deleteFile(req)
-			return res.json(response(true, 'Data tidak lengkap!', {error: err}))
+		if (!req.body.location && !req.files.productData && !req.body.nodata) {
+			err.push({
+				value: '',
+				msg: 'Lokasi/file produk harus diisi',
+				param: 'location',
+				location: 'body',
+			})
 		}
-		next()
+		if (req.body.nodata && !req.files.media) {
+			err.push({
+				value: '',
+				msg: 'Media produk harus diisi',
+				param: 'media',
+				location: 'body',
+			})
+		}
+		if (req.files.productData) {
+			if (req.files.productData[0].mimetype == 'application/x-zip-compressed') {
+				var filepath = path.join(req.files.productData[0].destination, req.files.productData[0].filename)
+				const extractPath = path.join(req.files.productData[0].destination, path.parse(req.files.productData[0].filename).name)
+
+				var unziper = new DecompressZip(filepath)
+				unziper.on('extract', function () {
+					fs.unlink(filepath, (err) => {
+						if (err) {
+							console.error(err)
+						}
+					})
+					if (err.length > 0) {
+						deleteFile(req)
+						return res.json(response(true, msg.errValidation, {error: err}))
+					}
+					req.files.productData[0].path = extractPath
+					next()
+				})
+				unziper.on('error', function (err) {
+					err.push({
+						value: '',
+						msg: 'Gagal mengextract file game',
+						param: 'location',
+						location: 'body',
+					})
+				})
+				unziper.extract({
+					path: extractPath,
+					filter: function (file) {
+						return file.type !== 'SymbolicLink'
+					},
+				})
+			} else {
+				if (err.length > 0) {
+					deleteFile(req)
+					return res.json(response(true, msg.errValidation, {error: err}))
+				}
+				next()
+			}
+		} else {
+			if (err.length > 0) {
+				deleteFile(req)
+				return res.json(response(true, msg.errValidation, {error: err}))
+			}
+			next()
+		}
 	},
 ]
 const detailProduct = [
@@ -169,17 +229,16 @@ const detailProduct = [
 	param('product').exists(),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Alamat website salah!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
 const searchProduct = [
-	param('title').exists().withMessage('Judul product tidak boleh kosong'),
+	param('type').exists().withMessage('Tipe produk tidak boleh kosong'),
+	param('title').exists().withMessage('Judul produk tidak boleh kosong'),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Alamat website salah!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
@@ -187,27 +246,32 @@ const listbyType = [
 	param('type').exists().withMessage('Judul product tidak boleh kosong'),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Alamat website salah!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
 const deleteProduct = [
-	body('product_id').exists().withMessage('id produk tidak boleh kosong'),
-	body('reason').exists().withMessage('Alasan penghapusan produk harus ada'),
+	body('product_id').isInt().withMessage('id produk tidak boleh kosong'),
+	body('reason').exists().isLength({min: 5}).withMessage('Alasan penghapusan produk harus ada'),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Alamat website salah!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
+		next()
+	},
+]
+const undeleteProduct = [
+	body('product_id').exists().withMessage('id produk tidak boleh kosong'),
+	(req, res, next) => {
+		err = errorFilter(req)
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
 const completelyDeleteProduct = [
-	query('id').exists().withMessage('id produk tidak boleh kosong'),
+	body('product_id').exists().withMessage('id produk tidak boleh kosong'),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Alamat website salah!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
@@ -215,8 +279,7 @@ const deleteUser = [
 	query('id').exists().withMessage('id user tidak boleh kosong'),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Alamat website salah!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
@@ -224,8 +287,7 @@ const deleteMedia = [
 	body('media_id').exists().withMessage('id media tidak boleh kosong'),
 	(req, res, next) => {
 		err = errorFilter(req)
-		if (err.length > 0)
-			return res.json(response(true, 'Alamat website salah!', {error: err}))
+		if (err.length > 0) return res.json(response(true, msg.errValidation, {error: err}))
 		next()
 	},
 ]
@@ -239,13 +301,11 @@ const updateProduct = [
 		.isLength({min: 1, max: 32})
 		.withMessage('title harus 1 - 32 karakter'),
 	body('desc').exists().isLength({min: 5}),
-	body('type').exists(),
-	body('location').exists(),
 	(req, res, next) => {
 		err = errorFilter(req)
 		if (err.length > 0) {
 			deleteFile(req)
-			return res.json(response(true, 'Data tidak lengkap!', {error: err}))
+			return res.json(response(true, msg.errValidation, {error: err}))
 		}
 		next()
 	},
@@ -265,4 +325,5 @@ module.exports = {
 	completelyDeleteProduct,
 	deleteMedia,
 	updateProduct,
+	undeleteProduct,
 }

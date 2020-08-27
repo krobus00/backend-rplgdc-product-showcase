@@ -25,14 +25,15 @@ const permit = (...allow) => {
 
 const authToken = async (req, res, next) => {
 	const authHeader = req.headers['authorization'] || ''
-	const token = authHeader.split(' ')[1]
+	const token = authHeader == '' ? req.cookies['accessToken'] || '' : authHeader.split(' ')[1]
 	if (token == null) return res.json(response(true, msg.unauthorized, {}))
 	jwt.verify(token, process.env.ACCESS_TOKEN, (err, info) => {
 		if (err) return res.json(response(true, msg.unauthorized, {}))
-		db.query('SELECT * FROM token WHERE token = ?', [token], (err, results) => {
+		db.query('SELECT * FROM token WHERE token = ?', [token], async (err, results) => {
 			if (results.length >= 1) {
 				if (Date.parse(results[0].create_at) >= info.iat * 1000) {
 					req.info = info
+					req.info.admin = (await checkStatus(info.user_id)) == 'admin' ? true : false
 					next()
 				} else {
 					return res.json(response(true, msg.unauthorized, {}))
@@ -43,7 +44,19 @@ const authToken = async (req, res, next) => {
 		})
 	})
 }
+const getTokenData = async (req, res, next) => {
+	const authHeader = req.headers['authorization'] || ''
+	const token = authHeader == '' ? req.cookies['accessToken'] || '' : authHeader.split(' ')[1]
+	jwt.verify(token, process.env.ACCESS_TOKEN, async (err, info) => {
+		if (!err) {
+			req.info = info
+			req.info.admin = (await checkStatus(info.user_id)) == 'admin' ? true : false
+		}
+	})
+	next()
+}
 module.exports = {
 	authToken,
+	getTokenData,
 	permit,
 }

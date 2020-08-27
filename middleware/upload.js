@@ -18,43 +18,28 @@ const storage = multer.diskStorage({
 	},
 	filename: function (req, file, cb) {
 		const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9)
-		cb(
-			null,
-			file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname),
-		)
+		cb(null, file.fieldname + '-' + uniqueSuffix + path.extname(file.originalname))
 	},
 })
 const checkFileType = (file, cb) => {
 	if (file.fieldname === 'avatar' || file.fieldname === 'thumbnail') {
-		if (
-			file.mimetype === 'image/png' ||
-			file.mimetype === 'image/jpg' ||
-			file.mimetype === 'image/jpeg' ||
-			file.mimetype === 'image/gif'
-		) {
+		if (file.mimetype.includes('image')) {
 			cb(null, true)
 		} else {
 			cb(msg.extNotAllow, false)
 		}
 	} else if (file.fieldname === 'media') {
-		if (
-			file.mimetype === 'image/png' ||
-			file.mimetype === 'image/jpg' ||
-			file.mimetype === 'image/jpeg' ||
-			file.mimetype === 'image/gif' ||
-			file.mimetype === 'video/x-flv' ||
-			file.mimetype === 'video/mp4' ||
-			file.mimetype === 'video/3gpp' ||
-			file.mimetype === 'video/quicktime' ||
-			file.mimetype === 'video/x-msvideo' ||
-			file.mimetype === 'video/x-ms-wmv'
-		) {
+		if (file.mimetype.includes('image') || file.mimetype.includes('video') || file.mimetype.includes('audio')) {
 			cb(null, true)
 		} else {
 			cb(msg.extNotAllow, false)
 		}
 	} else if (file.fieldname === 'productData') {
-		cb(null, true)
+		if (file.mimetype === 'application/x-zip-compressed' || file.mimetype === 'application/x-shockwave-flash' || path.extname(file.originalname) == '.apk') {
+			cb(null, true)
+		} else {
+			cb(msg.extNotAllow, false)
+		}
 	} else {
 		cb(msg.unkownForm, false)
 	}
